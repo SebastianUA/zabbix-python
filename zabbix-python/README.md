@@ -1,4 +1,4 @@
-#  Work with zabbix templates (export and import) and deploy them to gitlab
+#  Work with zabbix templates (export and import)
  
  ```
  $ python3 zabbix_templates.py -h
