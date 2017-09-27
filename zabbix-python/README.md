@@ -1,5 +1,7 @@
 #  Work with zabbix templates (export and import) and deploy them to gitlab
- ```$ python3 zabbix_templates.py -h
+ 
+ ```
+ $ python3 zabbix_templates.py -h
 usage: python3 script_name.py {ARGS}
 
 optional arguments:
