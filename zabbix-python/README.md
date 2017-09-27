@@ -2,7 +2,9 @@
  
  ```
  $ python3 zabbix_templates.py -h
-usage: python3 script_name.py {ARGS}
+```
+ ```
+ usage: python3 script_name.py {ARGS}
 
 optional arguments:
   -h, --help            show this help message and exit
