@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import requests
@@ -6,10 +6,9 @@ import time
 import os
 import xml.dom.minidom
 import argparse
-import gitlab
 import glob
+import json
 
-from datetime import datetime
 from pyzabbix import ZabbixAPI, ZabbixAPIException
 from sys import exit
 
@@ -28,36 +27,32 @@ class Bgcolors:
         }
 
 
-def login_to_zabbix():
-    # host, login, password to connect to PROD zabbix-server
-    zabbix__host = 'https://zabbix.com/'
-    zabbix__user = 'user'
-    zabbix__password = 'password'
+def login_to_zabbix(z_host, z_user, z_password):
     # You can use the connection__timeout
     connection__timeout = 45
     # Verify SSL
     verify__ssl = False
     # Connect to zabbix-server
-    zapi = ZabbixAPI(zabbix__host, timeout=connection__timeout)
+    zapi = ZabbixAPI(z_host, timeout=connection__timeout)
     zapi.session.verify = verify__ssl
     if not verify__ssl:
         from requests.packages.urllib3.exceptions import InsecureRequestWarning
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-    zapi.login(zabbix__user, zabbix__password)
-    zapi.session.auth = (zabbix__user, zabbix__password)
+    zapi.login(z_user, z_password)
+    zapi.session.auth = (z_user, z_password)
     # You can re-define connection__timeout after
     zapi.timeout = connection__timeout
     return zapi
 
 
-def get_template(template):
-    zapi = login_to_zabbix()
+def get_template(z_host, z_user, z_password, template):
+    zapi = login_to_zabbix(z_host, z_user, z_password)
     get__template = zapi.template.get(filter={"name": template}, output=['templateid', 'name'])
     return get__template
 
 
-def export_template(dir_path, template):
-    zapi = login_to_zabbix()
+def export_template(z_host, z_user, z_password, dir_path, template):
+    zapi = login_to_zabbix(z_host, z_user, z_password)
     get_template_name = get_template(template)
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
@@ -87,18 +82,18 @@ def export_template(dir_path, template):
     return export_template
 
 
-def get_templates():
+def get_templates(z_host, z_user, z_password):
     templates = []
-    zapi = login_to_zabbix()
+    zapi = login_to_zabbix(z_host, z_user, z_password)
     get__templates = zapi.template.get(output=['templateid', 'name'])
     for template in get__templates:
         templates.append(template)
     return templates
 
 
-def export_templates(dir_path):
-    zapi = login_to_zabbix()
-    templates = get_templates()
+def export_templates(z_host, z_user, z_password, dir_path):
+    zapi = login_to_zabbix(z_host, z_user, z_password)
+    templates = get_templates(z_host, z_user, z_password)
 
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
@@ -127,8 +122,9 @@ def export_templates(dir_path):
     return export_templates
 
 
-def import_templates(dir_path, templates):
-    zapi = login_to_zabbix()
+def import_templates(z_host, z_user, z_password, dir_path, templates):
+    global files
+    zapi = login_to_zabbix(z_host, z_user, z_password)
 
     rules = {
         'applications': {
@@ -189,8 +185,8 @@ def import_templates(dir_path, templates):
         for template in templates:
             files = glob.glob(str(dir_path) + "/" + str(template) + ".xml")
     for f in files:
-        with open(f, 'r') as f:
-            template = f.read()
+        with open(f, 'r') as file:
+            template = file.read()
             try:
                 zapi.confimport('xml', template, rules)
             except ZabbixAPIException as e:
@@ -198,11 +194,11 @@ def import_templates(dir_path, templates):
     return import_templates
 
 
-def export_groups():
+def export_groups(z_host, z_user, z_password):
     file_out = 'exported_groups.txt'
     if os.path.isfile(file_out):
         os.remove(file_out)
-    zapi = login_to_zabbix()
+    zapi = login_to_zabbix(z_host, z_user, z_password)
     get__groups = zapi.hostgroup.get(output=['groupid', 'name'])
     try:
         for group in get__groups:
@@ -211,26 +207,29 @@ def export_groups():
             f.close()
         print("All groups has been exported to %s!" % file_out)
     except ValueError:
-        print('I cant write to file')
+        print('I cant write to [%s] file' % file_out)
+        print(ValueError)
 
     return export_groups
 
 
-def export_autodiscovery_rules():
+def export_autodiscovery_rules(z_host, z_user, z_password):
     file_out = 'exported_autodiscovery_rules.txt'
     if os.path.isfile(file_out):
         os.remove(file_out)
-    zapi = login_to_zabbix()
+    zapi = login_to_zabbix(z_host, z_user, z_password)
     get__actions = zapi.action.get(selectOperations='extend', selectFilter='extend', filter={"eventsource": 2})
     try:
         for action in get__actions:
-            print (action)
-            # f = open(file_out, 'a')
-            # f.write(json.loads(action))
-            # f.close()
-        # print("All autodiscovery rules has been exported to %s!" % file_out)
+            f = open(file_out, 'a')
+            f.write(action['name'] + '\n')
+            # f = open(file_out, 'wb')
+            # f.write(action + '\n')
+            f.close()
+        print("All autodiscovery rules has been exported to %s!" % file_out)
     except TypeError:
-        print('I cant write to file')
+        print('I cant write to [%s] file' % file_out)
+        print(ValueError)
 
     return export_autodiscovery_rules
 
@@ -247,6 +246,9 @@ def main():
     parser.add_argument('--t', '--template', nargs='+', dest='template', help='Indicate a template(s)', default='all')
     parser.add_argument('--d', '--dir', dest='templates_dir', help='Indicate a folder for template(s)',
                         default='exported_templates', metavar='folder')
+    parser.add_argument('--zabbix-host', dest='zabbix_host', help='Zabbix host', default=None)
+    parser.add_argument('--zabbix-user', dest='zabbix_user', help='Zabbix user', default=None)
+    parser.add_argument('--zabbix-password', dest='zabbix_password', help='Zabbix password of user', default=None)
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--i', dest='imports', help='Import function', action='store_true')
@@ -260,32 +262,44 @@ def main():
     template = results.template
     templates_dir = results.templates_dir
 
-    zapi = login_to_zabbix()
-    zabbix__version = zapi.do_request('apiinfo.version')
-    print(
-        Bgcolors().get['OKGREEN'], "============================================================",
-        Bgcolors().get['ENDC'])
-    print(
-        Bgcolors().get['OKGREEN'],
-        'Zabbix Version:',
-        zabbix__version['result'] + Bgcolors().get['ENDC'])
-    print(
-        Bgcolors().get['OKGREEN'],
-        "============================================================",
-        Bgcolors().get['ENDC'])
+    # host, login, password to connect to zabbix-server
+    zabbix__host = results.zabbix_host
+    zabbix__user = results.zabbix_user
+    zabbix__password = results.zabbix_password
 
-    if results.exports:
-        print ('EXPORT function!')
-        if template == 'all':
-            export_templates(templates_dir)
+    if (zabbix__host is not None) and (zabbix__user is not None) and (zabbix__password is not None):
+        zapi = login_to_zabbix(zabbix__host, zabbix__user, zabbix__password)
+        zabbix__version = zapi.do_request('apiinfo.version')
+        print(
+            Bgcolors().get['OKGREEN'], "============================================================",
+            Bgcolors().get['ENDC'])
+        print(
+            Bgcolors().get['OKGREEN'],
+            'Zabbix Version:',
+            zabbix__version['result'] + Bgcolors().get['ENDC'])
+        print(
+            Bgcolors().get['OKGREEN'],
+            "============================================================",
+            Bgcolors().get['ENDC'])
+        if results.exports:
+            print ('EXPORT function!')
+            if template == 'all':
+                export_templates(zabbix__host, zabbix__user, zabbix__password, templates_dir)
+            else:
+                export_template(zabbix__host, zabbix__user, zabbix__password, templates_dir, template)
+            export_groups(zabbix__host, zabbix__user, zabbix__password)
+            export_autodiscovery_rules(zabbix__host, zabbix__user, zabbix__password)
+        elif results.imports:
+            print('IMPORT function')
+            import_templates(zabbix__host, zabbix__user, zabbix__password, templates_dir, template)
         else:
-            export_template(templates_dir, template)
-        export_groups()
-        #export_autodiscovery_rules()
-
-    elif results.imports:
-        print('IMPORT function')
-        import_templates(templates_dir, template)
+            print('Please add [--e] for export or [--i] for import')
+            print('For help, use: script_name.py -h')
+            exit(0)
+    else:
+        print('Please add [--zabbix-host] or [--zabbix-user] or [--zabbix-password]')
+        print('For help, use: script_name.py -h')
+        exit(0)
 
     end__time = round(time.time() - start__time, 2)
     print("--- %s seconds ---" % end__time)
